@@ -60,7 +60,8 @@ SegmentFlusher::~SegmentFlusher() = default;
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 Status SegmentFlusher::flush_single_block(const vectorized::Block* block, int32_t segment_id,
-                                          int64_t* flush_size) {
+                                          int64_t* flush_size,
+                                          bool bypass_packed_file) {
     if (block->rows() == 0) {
         return Status::OK();
     }
@@ -68,12 +69,14 @@ Status SegmentFlusher::flush_single_block(const vectorized::Block* block, int32_
     bool no_compression = flush_block.bytes() <= config::segment_compression_threshold_kb * 1024;
     if (config::enable_vertical_segment_writer) {
         std::unique_ptr<segment_v2::VerticalSegmentWriter> writer;
-        RETURN_IF_ERROR(_create_segment_writer(writer, segment_id, no_compression));
+        RETURN_IF_ERROR(
+                _create_segment_writer(writer, segment_id, no_compression, bypass_packed_file));
         RETURN_IF_ERROR_OR_CATCH_EXCEPTION(_add_rows(writer, &flush_block, 0, flush_block.rows()));
         RETURN_IF_ERROR(_flush_segment_writer(writer, flush_size));
     } else {
         std::unique_ptr<segment_v2::SegmentWriter> writer;
-        RETURN_IF_ERROR(_create_segment_writer(writer, segment_id, no_compression));
+        RETURN_IF_ERROR(
+                _create_segment_writer(writer, segment_id, no_compression, bypass_packed_file));
         RETURN_IF_ERROR_OR_CATCH_EXCEPTION(_add_rows(writer, &flush_block, 0, flush_block.rows()));
         RETURN_IF_ERROR(_flush_segment_writer(writer, flush_size));
     }
@@ -102,13 +105,17 @@ Status SegmentFlusher::_add_rows(std::unique_ptr<segment_v2::VerticalSegmentWrit
 }
 
 Status SegmentFlusher::_create_segment_writer(std::unique_ptr<segment_v2::SegmentWriter>& writer,
-                                              int32_t segment_id, bool no_compression) {
+                                              int32_t segment_id, bool no_compression,
+                                              bool bypass_packed_file) {
     io::FileWriterPtr segment_file_writer;
-    RETURN_IF_ERROR(_context.file_writer_creator->create(segment_id, segment_file_writer));
+    RETURN_IF_ERROR(_context.file_writer_creator->create(segment_id, segment_file_writer,
+                                                         FileType::SEGMENT_FILE,
+                                                         bypass_packed_file));
 
     IndexFileWriterPtr index_file_writer;
     if (_context.tablet_schema->has_inverted_index() || _context.tablet_schema->has_ann_index()) {
-        RETURN_IF_ERROR(_context.file_writer_creator->create(segment_id, &index_file_writer));
+        RETURN_IF_ERROR(_context.file_writer_creator->create(segment_id, &index_file_writer,
+                                                             bypass_packed_file));
     }
 
     segment_v2::SegmentWriterOptions writer_options;
@@ -139,13 +146,16 @@ Status SegmentFlusher::_create_segment_writer(std::unique_ptr<segment_v2::Segmen
 
 Status SegmentFlusher::_create_segment_writer(
         std::unique_ptr<segment_v2::VerticalSegmentWriter>& writer, int32_t segment_id,
-        bool no_compression) {
+        bool no_compression, bool bypass_packed_file) {
     io::FileWriterPtr segment_file_writer;
-    RETURN_IF_ERROR(_context.file_writer_creator->create(segment_id, segment_file_writer));
+    RETURN_IF_ERROR(_context.file_writer_creator->create(segment_id, segment_file_writer,
+                                                         FileType::SEGMENT_FILE,
+                                                         bypass_packed_file));
 
     IndexFileWriterPtr index_file_writer;
     if (_context.tablet_schema->has_inverted_index() || _context.tablet_schema->has_ann_index()) {
-        RETURN_IF_ERROR(_context.file_writer_creator->create(segment_id, &index_file_writer));
+        RETURN_IF_ERROR(_context.file_writer_creator->create(segment_id, &index_file_writer,
+                                                             bypass_packed_file));
     }
 
     segment_v2::VerticalSegmentWriterOptions writer_options;
@@ -395,11 +405,13 @@ Status SegmentCreator::flush() {
 }
 
 Status SegmentCreator::flush_single_block(const vectorized::Block* block, int32_t segment_id,
-                                          int64_t* flush_size) {
+                                          int64_t* flush_size,
+                                          bool bypass_packed_file) {
     if (block->rows() == 0) {
         return Status::OK();
     }
-    RETURN_IF_ERROR(_segment_flusher.flush_single_block(block, segment_id, flush_size));
+    RETURN_IF_ERROR(
+            _segment_flusher.flush_single_block(block, segment_id, flush_size, bypass_packed_file));
     return Status::OK();
 }
 

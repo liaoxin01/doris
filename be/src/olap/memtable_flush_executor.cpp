@@ -47,11 +47,12 @@ class MemtableFlushTask final : public Runnable {
 
 public:
     MemtableFlushTask(std::shared_ptr<FlushToken> flush_token, std::shared_ptr<MemTable> memtable,
-                      int32_t segment_id, int64_t submit_task_time)
+                      int32_t segment_id, int64_t submit_task_time, bool bypass_packed_file)
             : _flush_token(flush_token),
               _memtable(memtable),
               _segment_id(segment_id),
-              _submit_task_time(submit_task_time) {
+              _submit_task_time(submit_task_time),
+              _bypass_packed_file(bypass_packed_file) {
         g_flush_task_num << 1;
     }
 
@@ -60,7 +61,8 @@ public:
     void run() override {
         auto token = _flush_token.lock();
         if (token) {
-            token->_flush_memtable(_memtable, _segment_id, _submit_task_time);
+            token->_flush_memtable(_memtable, _segment_id, _submit_task_time,
+                                   _bypass_packed_file);
         } else {
             LOG(WARNING) << "flush token is deconstructed, ignore the flush task";
         }
@@ -71,6 +73,7 @@ private:
     std::shared_ptr<MemTable> _memtable;
     int32_t _segment_id;
     int64_t _submit_task_time;
+    bool _bypass_packed_file;
 };
 
 std::ostream& operator<<(std::ostream& os, const FlushStatistic& stat) {
@@ -84,7 +87,7 @@ std::ostream& operator<<(std::ostream& os, const FlushStatistic& stat) {
     return os;
 }
 
-Status FlushToken::submit(std::shared_ptr<MemTable> mem_table) {
+Status FlushToken::submit(std::shared_ptr<MemTable> mem_table, bool bypass_packed_file) {
     {
         std::shared_lock rdlk(_flush_status_lock);
         DBUG_EXECUTE_IF("FlushToken.submit_flush_error", {
@@ -100,7 +103,8 @@ Status FlushToken::submit(std::shared_ptr<MemTable> mem_table) {
     }
     int64_t submit_task_time = MonotonicNanos();
     auto task = MemtableFlushTask::create_shared(
-            shared_from_this(), mem_table, _rowset_writer->allocate_segment_id(), submit_task_time);
+            shared_from_this(), mem_table, _rowset_writer->allocate_segment_id(), submit_task_time,
+            bypass_packed_file);
     // NOTE: we should guarantee WorkloadGroup is not deconstructed when submit memtable flush task.
     // because currently WorkloadGroup's can only be destroyed when all queries in the group is finished,
     // but not consider whether load channel is finish.
@@ -181,7 +185,8 @@ Status FlushToken::_try_reserve_memory(const std::shared_ptr<ResourceContext>& r
     return st;
 }
 
-Status FlushToken::_do_flush_memtable(MemTable* memtable, int32_t segment_id, int64_t* flush_size) {
+Status FlushToken::_do_flush_memtable(MemTable* memtable, int32_t segment_id, int64_t* flush_size,
+                                      bool bypass_packed_file) {
     VLOG_CRITICAL << "begin to flush memtable for tablet: " << memtable->tablet_id()
                   << ", memsize: " << PrettyPrinter::print_bytes(memtable->memory_usage())
                   << ", rows: " << memtable->stat().raw_rows;
@@ -207,7 +212,8 @@ Status FlushToken::_do_flush_memtable(MemTable* memtable, int32_t segment_id, in
         }};
         std::unique_ptr<vectorized::Block> block;
         RETURN_IF_ERROR(memtable->to_block(&block));
-        RETURN_IF_ERROR(_rowset_writer->flush_memtable(block.get(), segment_id, flush_size));
+        RETURN_IF_ERROR(
+                _rowset_writer->flush_memtable(block.get(), segment_id, flush_size, bypass_packed_file));
         memtable->set_flush_success();
     }
     _memtable_stat += memtable->stat();
@@ -219,7 +225,7 @@ Status FlushToken::_do_flush_memtable(MemTable* memtable, int32_t segment_id, in
 }
 
 void FlushToken::_flush_memtable(std::shared_ptr<MemTable> memtable_ptr, int32_t segment_id,
-                                 int64_t submit_task_time) {
+                                 int64_t submit_task_time, bool bypass_packed_file) {
     signal::set_signal_task_id(_rowset_writer->load_id());
     signal::tablet_id = memtable_ptr->tablet_id();
     Defer defer {[&]() {
@@ -262,7 +268,8 @@ void FlushToken::_flush_memtable(std::shared_ptr<MemTable> memtable_ptr, int32_t
     size_t memory_usage = memtable_ptr->memory_usage();
 
     int64_t flush_size;
-    Status s = _do_flush_memtable(memtable_ptr.get(), segment_id, &flush_size);
+    Status s = _do_flush_memtable(memtable_ptr.get(), segment_id, &flush_size,
+                                  bypass_packed_file);
 
     {
         std::shared_lock rdlk(_flush_status_lock);

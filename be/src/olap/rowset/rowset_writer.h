@@ -92,28 +92,33 @@ public:
     virtual Status add_rowset_for_linked_schema_change(RowsetSharedPtr rowset) = 0;
 
     virtual Status create_file_writer(uint32_t segment_id, io::FileWriterPtr& writer,
-                                      FileType file_type = FileType::SEGMENT_FILE) {
+                                      FileType file_type = FileType::SEGMENT_FILE,
+                                      bool bypass_packed_file = false) {
+        (void)bypass_packed_file;
         return Status::NotSupported("RowsetWriter does not support create_file_writer");
     }
 
     virtual Status create_index_file_writer(uint32_t segment_id,
-                                            IndexFileWriterPtr* index_file_writer) {
+                                            IndexFileWriterPtr* index_file_writer,
+                                            bool bypass_packed_file = false) {
         // Create file writer for the inverted index format v2.
         io::FileWriterPtr idx_file_v2_ptr;
         if (_context.tablet_schema->get_inverted_index_storage_format() !=
             InvertedIndexStorageFormatPB::V1) {
-            RETURN_IF_ERROR(
-                    create_file_writer(segment_id, idx_file_v2_ptr, FileType::INVERTED_INDEX_FILE));
+            RETURN_IF_ERROR(create_file_writer(segment_id, idx_file_v2_ptr,
+                                               FileType::INVERTED_INDEX_FILE,
+                                               bypass_packed_file));
         }
         std::string segment_prefix {InvertedIndexDescriptor::get_index_file_path_prefix(
                 _context.segment_path(segment_id))};
+        auto fs = bypass_packed_file ? _context.raw_fs() : _context.fs();
         // default to true, only when base compaction, we need to check the config
         bool can_use_ram_dir = true;
         if (_context.compaction_type == ReaderType::READER_BASE_COMPACTION) {
             can_use_ram_dir = config::inverted_index_ram_dir_enable_when_base_compaction;
         }
         *index_file_writer = std::make_unique<IndexFileWriter>(
-                _context.fs(), segment_prefix, _context.rowset_id.to_string(), segment_id,
+                fs, segment_prefix, _context.rowset_id.to_string(), segment_id,
                 _context.tablet_schema->get_inverted_index_storage_format(),
                 std::move(idx_file_v2_ptr), can_use_ram_dir);
         return Status::OK();
@@ -132,7 +137,8 @@ public:
     }
 
     virtual Status flush_memtable(vectorized::Block* block, int32_t segment_id,
-                                  int64_t* flush_size) {
+                                  int64_t* flush_size, bool bypass_packed_file = false) {
+        (void)bypass_packed_file;
         return Status::Error<ErrorCode::NOT_IMPLEMENTED_ERROR>(
                 "RowsetWriter not support flush_memtable");
     }

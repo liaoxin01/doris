@@ -230,7 +230,7 @@ int64_t MemTableMemoryLimiter::_flush_active_memtables(int64_t need_flush) {
             // if the memtable writer just got flushed, don't flush it again
             continue;
         }
-        Status st = w->flush_async();
+        Status st = w->flush_async(true);
         if (!st.ok()) {
             auto err_msg = fmt::format(
                     "tablet writer failed to reduce mem consumption by flushing memtable, "

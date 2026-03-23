@@ -67,7 +67,8 @@ Status BetaRowsetWriterV2::init(const RowsetWriterContext& rowset_writer_context
 }
 
 Status BetaRowsetWriterV2::create_file_writer(uint32_t segment_id, io::FileWriterPtr& file_writer,
-                                              FileType file_type) {
+                                              FileType file_type, bool bypass_packed_file) {
+    (void)bypass_packed_file;
     auto partition_id = _context.partition_id;
     auto index_id = _context.index_id;
     auto tablet_id = _context.tablet_id;
@@ -97,14 +98,15 @@ Status BetaRowsetWriterV2::add_segment(uint32_t segment_id, const SegmentStatist
 }
 
 Status BetaRowsetWriterV2::flush_memtable(vectorized::Block* block, int32_t segment_id,
-                                          int64_t* flush_size) {
+                                          int64_t* flush_size, bool bypass_packed_file) {
     if (block->rows() == 0) {
         return Status::OK();
     }
 
     {
         SCOPED_RAW_TIMER(&_segment_writer_ns);
-        RETURN_IF_ERROR(_segment_creator.flush_single_block(block, segment_id, flush_size));
+        RETURN_IF_ERROR(
+                _segment_creator.flush_single_block(block, segment_id, flush_size, bypass_packed_file));
     }
     // delete bitmap and seg compaction are done on the destination BE.
     return Status::OK();

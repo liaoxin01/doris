@@ -144,8 +144,8 @@ Status MemTableWriter::write(const vectorized::Block* block,
     return Status::OK();
 }
 
-Status MemTableWriter::_flush_memtable() {
-    auto s = _flush_memtable_async();
+Status MemTableWriter::_flush_memtable(bool bypass_packed_file) {
+    auto s = _flush_memtable_async(bypass_packed_file);
     _reset_mem_table();
     if (UNLIKELY(!s.ok())) {
         return s;
@@ -153,7 +153,7 @@ Status MemTableWriter::_flush_memtable() {
     return Status::OK();
 }
 
-Status MemTableWriter::_flush_memtable_async() {
+Status MemTableWriter::_flush_memtable_async(bool bypass_packed_file) {
     DCHECK(_flush_token != nullptr);
     std::shared_ptr<MemTable> memtable;
     {
@@ -163,10 +163,10 @@ Status MemTableWriter::_flush_memtable_async() {
         memtable->update_mem_type(MemType::WRITE_FINISHED);
         _freezed_mem_tables.push_back(memtable);
     }
-    return _flush_token->submit(memtable);
+    return _flush_token->submit(memtable, bypass_packed_file);
 }
 
-Status MemTableWriter::flush_async() {
+Status MemTableWriter::flush_async(bool bypass_packed_file) {
     std::lock_guard<std::mutex> l(_lock);
     // Three calling paths:
     // 1. call by local, from `VTabletWriterV2::_write_memtable`.
@@ -188,7 +188,7 @@ Status MemTableWriter::flush_async() {
     VLOG_NOTICE << "flush memtable to reduce mem consumption. memtable size: "
                 << PrettyPrinter::print_bytes(_mem_table->memory_usage())
                 << ", tablet: " << _req.tablet_id << ", load id: " << print_id(_req.load_id);
-    auto s = _flush_memtable_async();
+    auto s = _flush_memtable_async(bypass_packed_file);
     _reset_mem_table();
     return s;
 }

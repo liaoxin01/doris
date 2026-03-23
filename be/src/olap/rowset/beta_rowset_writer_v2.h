@@ -69,14 +69,15 @@ public:
     }
 
     Status create_file_writer(uint32_t segment_id, io::FileWriterPtr& writer,
-                              FileType file_type = FileType::SEGMENT_FILE) override;
+                              FileType file_type = FileType::SEGMENT_FILE,
+                              bool bypass_packed_file = false) override;
 
     Status flush() override {
         return Status::Error<ErrorCode::NOT_IMPLEMENTED_ERROR>("flush is not implemented");
     }
 
-    Status flush_memtable(vectorized::Block* block, int32_t segment_id,
-                          int64_t* flush_size) override;
+    Status flush_memtable(vectorized::Block* block, int32_t segment_id, int64_t* flush_size,
+                          bool bypass_packed_file = false) override;
 
     // Return the file size flushed to disk in "flush_size"
     // This method is thread-safe.

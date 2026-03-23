@@ -131,6 +131,9 @@ struct RowsetWriterContext {
     // This prevents creating multiple MergeFileSystem instances and ensures
     // packed_file_active flag remains consistent.
     mutable io::FileSystemSPtr _cached_fs = nullptr;
+    // Cached FileSystem instance without the PackedFileSystem wrapper.
+    // Used by memory-pressure flushes that should bypass small-file merging.
+    mutable io::FileSystemSPtr _cached_raw_fs = nullptr;
 
     // For collect segment statistics for compaction
     std::vector<RowsetReaderSharedPtr> input_rs_readers;
@@ -160,6 +163,43 @@ struct RowsetWriterContext {
         } else {
             return storage_resource->remote_segment_path(tablet_id, rowset_id.to_string(), seg_id);
         }
+    }
+
+    io::FileSystemSPtr raw_fs() const {
+        if (_cached_raw_fs != nullptr) {
+            return _cached_raw_fs;
+        }
+
+        auto fs = [this]() -> io::FileSystemSPtr {
+            if (is_local_rowset()) {
+                return io::global_local_filesystem();
+            } else {
+                return storage_resource->fs;
+            }
+        }();
+
+        auto algorithm = encrypt_algorithm;
+
+        if (!algorithm.has_value()) {
+#ifndef BE_TEST
+            constexpr std::string_view msg =
+                    "RowsetWriterContext::determine_encryption is not called when creating this "
+                    "RowsetWriterContext, it will result in encrypted rowsets left unencrypted";
+            auto st = Status::InternalError(msg);
+
+            LOG(WARNING) << st;
+            DCHECK(false) << st;
+#else
+            algorithm = EncryptionAlgorithmPB::PLAINTEXT;
+#endif
+        }
+
+        if (algorithm.has_value()) {
+            fs = io::make_file_system(fs, algorithm.value());
+        }
+
+        _cached_raw_fs = fs;
+        return fs;
     }
 
     io::FileSystemSPtr fs() const {

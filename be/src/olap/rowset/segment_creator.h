@@ -47,9 +47,11 @@ public:
     virtual ~FileWriterCreator() = default;
 
     virtual Status create(uint32_t segment_id, io::FileWriterPtr& file_writer,
-                          FileType file_type = FileType::SEGMENT_FILE) = 0;
+                          FileType file_type = FileType::SEGMENT_FILE,
+                          bool bypass_packed_file = false) = 0;
 
-    virtual Status create(uint32_t segment_id, IndexFileWriterPtr* file_writer) = 0;
+    virtual Status create(uint32_t segment_id, IndexFileWriterPtr* file_writer,
+                          bool bypass_packed_file = false) = 0;
 };
 
 template <class T>
@@ -59,12 +61,14 @@ public:
     explicit FileWriterCreatorT(T* t) : _t(t) {}
 
     Status create(uint32_t segment_id, io::FileWriterPtr& file_writer,
-                  FileType file_type = FileType::SEGMENT_FILE) override {
-        return _t->create_file_writer(segment_id, file_writer, file_type);
+                  FileType file_type = FileType::SEGMENT_FILE,
+                  bool bypass_packed_file = false) override {
+        return _t->create_file_writer(segment_id, file_writer, file_type, bypass_packed_file);
     }
 
-    Status create(uint32_t segment_id, IndexFileWriterPtr* file_writer) override {
-        return _t->create_index_file_writer(segment_id, file_writer);
+    Status create(uint32_t segment_id, IndexFileWriterPtr* file_writer,
+                  bool bypass_packed_file = false) override {
+        return _t->create_index_file_writer(segment_id, file_writer, bypass_packed_file);
     }
 
 private:
@@ -102,7 +106,8 @@ public:
     // Return the file size flushed to disk in "flush_size"
     // This method is thread-safe.
     Status flush_single_block(const vectorized::Block* block, int32_t segment_id,
-                              int64_t* flush_size = nullptr);
+                              int64_t* flush_size = nullptr,
+                              bool bypass_packed_file = false);
 
     int64_t num_rows_written() const { return _num_rows_written; }
 
@@ -144,9 +149,11 @@ private:
     Status _add_rows(std::unique_ptr<segment_v2::VerticalSegmentWriter>& segment_writer,
                      const vectorized::Block* block, size_t row_offset, size_t row_num);
     Status _create_segment_writer(std::unique_ptr<segment_v2::SegmentWriter>& writer,
-                                  int32_t segment_id, bool no_compression = false);
+                                  int32_t segment_id, bool no_compression = false,
+                                  bool bypass_packed_file = false);
     Status _create_segment_writer(std::unique_ptr<segment_v2::VerticalSegmentWriter>& writer,
-                                  int32_t segment_id, bool no_compression = false);
+                                  int32_t segment_id, bool no_compression = false,
+                                  bool bypass_packed_file = false);
     Status _flush_segment_writer(std::unique_ptr<segment_v2::SegmentWriter>& writer,
                                  int64_t* flush_size = nullptr);
     Status _flush_segment_writer(std::unique_ptr<segment_v2::VerticalSegmentWriter>& writer,
@@ -194,12 +201,13 @@ public:
     // Return the file size flushed to disk in "flush_size"
     // This method is thread-safe.
     Status flush_single_block(const vectorized::Block* block, int32_t segment_id,
-                              int64_t* flush_size = nullptr);
+                              int64_t* flush_size = nullptr,
+                              bool bypass_packed_file = false);
 
     // Flush a block into a single segment, without pre-allocated segment_id.
     // This method is thread-safe.
     Status flush_single_block(const vectorized::Block* block) {
-        return flush_single_block(block, allocate_segment_id());
+        return flush_single_block(block, allocate_segment_id(), nullptr, false);
     }
 
     Status close();

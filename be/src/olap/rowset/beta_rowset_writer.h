@@ -130,16 +130,18 @@ public:
     Status add_rowset_for_linked_schema_change(RowsetSharedPtr rowset) override;
 
     Status create_file_writer(uint32_t segment_id, io::FileWriterPtr& writer,
-                              FileType file_type = FileType::SEGMENT_FILE) override;
+                              FileType file_type = FileType::SEGMENT_FILE,
+                              bool bypass_packed_file = false) override;
 
-    Status create_index_file_writer(uint32_t segment_id, IndexFileWriterPtr* writer) override;
+    Status create_index_file_writer(uint32_t segment_id, IndexFileWriterPtr* writer,
+                                    bool bypass_packed_file = false) override;
 
     Status add_segment(uint32_t segment_id, const SegmentStatistics& segstat) override;
 
     Status flush() override;
 
-    Status flush_memtable(vectorized::Block* block, int32_t segment_id,
-                          int64_t* flush_size) override;
+    Status flush_memtable(vectorized::Block* block, int32_t segment_id, int64_t* flush_size,
+                          bool bypass_packed_file = false) override;
 
     // Return the file size flushed to disk in "flush_size"
     // This method is thread-safe.
@@ -203,7 +205,8 @@ protected:
     Status _generate_delete_bitmap(int32_t segment_id);
     virtual Status _build_rowset_meta(RowsetMeta* rowset_meta, bool check_segment_num = false);
     Status _create_file_writer(const std::string& path, io::FileWriterPtr& file_writer,
-                               bool is_index_file = false);
+                               bool is_index_file = false,
+                               bool bypass_packed_file = false);
     virtual Status _close_file_writers();
     virtual Status _check_segment_number_limit(size_t segnum);
     virtual int64_t _num_seg() const;

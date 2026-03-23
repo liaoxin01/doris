@@ -64,7 +64,7 @@ public:
     FlushToken(ThreadPool* thread_pool, std::shared_ptr<WorkloadGroup> wg_sptr)
             : _flush_status(Status::OK()), _thread_pool(thread_pool), _wg_wptr(wg_sptr) {}
 
-    Status submit(std::shared_ptr<MemTable> mem_table);
+    Status submit(std::shared_ptr<MemTable> mem_table, bool bypass_packed_file = false);
 
     // error has happens, so we cancel this token
     // And remove all tasks in the queue.
@@ -92,9 +92,10 @@ private:
     friend class MemtableFlushTask;
 
     void _flush_memtable(std::shared_ptr<MemTable> memtable_ptr, int32_t segment_id,
-                         int64_t submit_task_time);
+                         int64_t submit_task_time, bool bypass_packed_file = false);
 
-    Status _do_flush_memtable(MemTable* memtable, int32_t segment_id, int64_t* flush_size);
+    Status _do_flush_memtable(MemTable* memtable, int32_t segment_id, int64_t* flush_size,
+                              bool bypass_packed_file = false);
 
     Status _try_reserve_memory(const std::shared_ptr<ResourceContext>& resource_context,
                                int64_t size);
