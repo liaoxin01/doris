@@ -38,6 +38,7 @@ bvar::Adder<int64_t> g_poc_fetched_bytes("poc_fetched_bytes");
 bvar::Adder<int64_t> g_poc_coalesced_requests("poc_coalesced_requests");
 bvar::Adder<int64_t> g_poc_session_miss_bytes("poc_session_miss_bytes");
 bvar::Adder<int64_t> g_poc_sink_dropped_bytes("poc_sink_dropped_bytes");
+bvar::Adder<int64_t> g_poc_cached_skipped_bytes("poc_cached_skipped_bytes");
 bvar::Status<int64_t> g_poc_inflight_bytes_peak("poc_inflight_bytes_peak", 0);
 
 void poc_add_submitted_bytes(int64_t n) {
@@ -54,6 +55,9 @@ void poc_add_session_miss_bytes(int64_t n) {
 }
 void poc_add_sink_dropped_bytes(int64_t n) {
     g_poc_sink_dropped_bytes << n;
+}
+void poc_add_cached_skipped_bytes(int64_t n) {
+    g_poc_cached_skipped_bytes << n;
 }
 
 // ---------------------------------------------------------------------------

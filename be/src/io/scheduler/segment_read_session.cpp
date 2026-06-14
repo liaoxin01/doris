@@ -17,10 +17,19 @@
 
 #include "io/scheduler/segment_read_session.h"
 
+#include <bthread/bthread.h>
 #include <glog/logging.h>
 
 #include <algorithm>
 #include <cstring>
+
+#include "common/config.h"
+#include "io/cache/block_file_cache.h"
+#include "io/cache/block_file_cache_factory.h"
+#include "io/cache/file_block.h"
+#include "io/cache/file_cache_common.h"
+#include "io/fs/file_system.h"
+#include "util/async_io.h"
 
 namespace doris::io {
 
@@ -56,6 +65,44 @@ void SegmentReadSession::submit(std::vector<FetchRange> ranges, const FetchHints
     if (ranges.empty()) {
         return;
     }
+
+    // P1-5: drop ranges already present (DOWNLOADED) in the local file cache, so only cold
+    // blocks go through the scheduler (concurrent remote fetch). Cached blocks then miss the
+    // session at read time and fall through to the fast local-cache read path -- this avoids
+    // re-fetching warm data from remote, which otherwise makes warm scans slower than legacy.
+    if (config::poc_submit_only_cold_blocks) {
+        UInt128Wrapper hash = BlockFileCache::hash(_file_key);
+        if (BlockFileCache* cache = FileCacheFactory::instance()->get_by_path(hash);
+            cache != nullptr) {
+            std::map<size_t, FileBlockSPtr> cached = cache->get_blocks_by_key(hash);
+            std::vector<FetchRange> cold;
+            cold.reserve(ranges.size());
+            int64_t skipped = 0;
+            for (const auto& r : ranges) {
+                bool is_cached = false;
+                if (auto it = cached.upper_bound(r.offset); it != cached.begin()) {
+                    --it; // the cached block whose start offset <= r.offset
+                    const auto& range = it->second->range();
+                    if (range.left <= r.offset && r.offset + r.len - 1 <= range.right) {
+                        is_cached = true;
+                    }
+                }
+                if (is_cached) {
+                    skipped += static_cast<int64_t>(r.len);
+                } else {
+                    cold.push_back(r);
+                }
+            }
+            if (skipped > 0) {
+                poc_add_cached_skipped_bytes(skipped);
+            }
+            ranges = std::move(cold);
+            if (ranges.empty()) {
+                return;
+            }
+        }
+    }
+
     std::vector<MergedFetch> merged;
     IOScheduler::instance()->submit(_file_key, _inner, std::move(ranges), hints, _abandoned,
                                     &merged);
@@ -90,7 +137,18 @@ Status SegmentReadSession::try_read(size_t offset, Slice result, size_t* bytes_r
         return Status::NotFound<false>("session miss");
     }
 
-    auto res = future.get();
+    // Wait for the extent. The future is a std::condition_variable wait, which on a bthread
+    // (scanners run on bthreads) would pin the bthread's worker pthread and starve other
+    // scan bthreads. Following doris's own IO pattern, offload the wait to a pthread via
+    // AsyncIO so the bthread worker is released ("returned") during the IO wait -- this is
+    // the async IODependency at the bthread level. On a pthread, just wait inline.
+    Result<ExtentSPtr> res;
+    if (bthread_self() == 0) {
+        res = future.get();
+    } else {
+        auto task = [&]() { res = future.get(); };
+        AsyncIO::run_task(task, io::FileSystemType::S3);
+    }
     if (!res.has_value()) {
         poc_add_session_miss_bytes(static_cast<int64_t>(want));
         return Status::NotFound("session extent fetch failed: {}", res.error().to_string());

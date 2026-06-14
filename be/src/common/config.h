@@ -1680,6 +1680,10 @@ DECLARE_mInt64(poc_coalesce_gap);
 DECLARE_mInt64(poc_coalesce_quantum);
 // L3 CacheSink async write-back rate limit, in MB/s (token bucket).
 DECLARE_mInt64(poc_cache_fill_rate_mbps);
+// P1-5 local-cache awareness: only submit blocks NOT already in the local file cache to
+// the scheduler (cold blocks). Already-cached blocks fall through to the fast local read
+// path, so warm/partially-cached scans are not penalized by re-fetching from remote.
+DECLARE_mBool(poc_submit_only_cold_blocks);
 
 // The min thread num for S3FileUploadThreadPool
 DECLARE_Int64(num_s3_file_upload_thread_pool_min_thread);

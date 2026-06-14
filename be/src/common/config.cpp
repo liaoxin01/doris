@@ -1609,6 +1609,7 @@ DEFINE_mInt64(poc_inflight_bytes_budget, "1073741824"); // 1GB
 DEFINE_mInt64(poc_coalesce_gap, "524288");              // 512KB
 DEFINE_mInt64(poc_coalesce_quantum, "8388608");         // 8MB
 DEFINE_mInt64(poc_cache_fill_rate_mbps, "500");
+DEFINE_mBool(poc_submit_only_cold_blocks, "true");
 // The min thread num for S3FileUploadThreadPool
 DEFINE_Int64(num_s3_file_upload_thread_pool_min_thread, "16");
 // The max thread num for S3FileUploadThreadPool

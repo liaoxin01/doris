@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "io/fs/file_reader.h"
+#include "common/config.h"
 #include "io/scheduler/io_scheduler.h"
 
 namespace doris::io {
@@ -59,7 +60,12 @@ private:
 
 class SegmentReadSessionTest : public testing::Test {
 protected:
-    void SetUp() override { ASSERT_TRUE(IOScheduler::instance()->init().ok()); }
+    void SetUp() override {
+        ASSERT_TRUE(IOScheduler::instance()->init().ok());
+        // The cold-block filter queries the global FileCacheFactory, which isn't initialized
+        // in this unit test; disable it so submit() doesn't touch the cache.
+        config::poc_submit_only_cold_blocks = false;
+    }
 
     static void check_slice(SegmentReadSession& s, size_t off, size_t len) {
         std::vector<char> buf(len);

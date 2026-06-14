@@ -90,6 +90,8 @@ void poc_add_fetched_bytes(int64_t n);
 void poc_add_coalesced_requests(int64_t n);
 void poc_add_session_miss_bytes(int64_t n);
 void poc_add_sink_dropped_bytes(int64_t n);
+// Bytes of ranges skipped at submit because they were already in the local file cache (P1-5).
+void poc_add_cached_skipped_bytes(int64_t n);
 
 class IOScheduler {
 public:
