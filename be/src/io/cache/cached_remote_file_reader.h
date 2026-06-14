@@ -54,6 +54,10 @@ public:
 
     FileReader* get_remote_reader() { return _remote_file_reader.get(); }
 
+    // The raw, cache-bypassing remote reader. The IO scheduler POC (L2) reads large
+    // coalesced extents through this so they do not go through get_or_set.
+    FileReaderSPtr remote_file_reader_sptr() const { return _remote_file_reader; }
+
     static std::pair<size_t, size_t> s_align_size(size_t offset, size_t size, size_t length);
 
     int64_t mtime() const override { return _remote_file_reader->mtime(); }

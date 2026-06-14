@@ -1662,6 +1662,25 @@ DECLARE_mInt32(query_segment_file_cache_prefetch_block_size);
 DECLARE_mBool(enable_compaction_segment_file_cache_prefetch);
 // Number of blocks to prefetch ahead in segment iterator for compaction
 DECLARE_mInt32(compaction_segment_file_cache_prefetch_block_size);
+
+// ============================ Cold-read IO scheduler POC ============================
+// Master switch of the cold-read IO scheduler POC (L1 session / L2 scheduler / L3 sink).
+// When false, everything falls back to the legacy cached-remote read path.
+// A session miss while enabled also falls back to the legacy path, so any POC bug only
+// hurts performance, never correctness.
+DECLARE_mBool(enable_io_scheduler_poc);
+// Number of worker threads in the POC IO thread pool (L2).
+DECLARE_Int64(poc_io_thread_num);
+// In-flight bytes budget for L2 (counting-semaphore style). submit() never blocks;
+// back-pressure shows up as a longer queue / not-ready futures.
+DECLARE_mInt64(poc_inflight_bytes_budget);
+// L2 coalescing: merge two ranges whose gap is <= poc_coalesce_gap bytes.
+DECLARE_mInt64(poc_coalesce_gap);
+// L2 coalescing: a single coalesced request will not exceed poc_coalesce_quantum bytes.
+DECLARE_mInt64(poc_coalesce_quantum);
+// L3 CacheSink async write-back rate limit, in MB/s (token bucket).
+DECLARE_mInt64(poc_cache_fill_rate_mbps);
+
 // The min thread num for S3FileUploadThreadPool
 DECLARE_Int64(num_s3_file_upload_thread_pool_min_thread);
 // The max thread num for S3FileUploadThreadPool

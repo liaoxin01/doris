@@ -100,6 +100,18 @@ public:
 
     void build_all_data_blocks();
 
+    // Cold-read IO scheduler POC: export every block in the computed sequence as a
+    // BlockRange (1MB-aligned), so the session can submit them all at once instead of
+    // walking the sliding window. Must be called after the block sequence is built.
+    std::vector<BlockRange> take_all_ranges() const {
+        std::vector<BlockRange> ranges;
+        ranges.reserve(_block_sequence.size());
+        for (const auto& b : _block_sequence) {
+            ranges.push_back(_block_id_to_range(b.block_id));
+        }
+        return ranges;
+    }
+
 private:
     // Parameters:
     //   row_bitmap: The complete bitmap of rowids to scan

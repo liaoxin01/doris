@@ -2074,6 +2074,11 @@ Status FileColumnIterator::init(const ColumnIteratorOptions& opts) {
 FileColumnIterator::~FileColumnIterator() = default;
 
 void FileColumnIterator::_trigger_prefetch_if_eligible(ordinal_t ord) {
+    if (config::enable_io_scheduler_poc) {
+        // POC L2 owns prefetch: ranges were submitted to the session at iterator init, so
+        // the legacy sliding-window dryrun prefetch is skipped to avoid double downloading.
+        return;
+    }
     std::vector<BlockRange> ranges;
     if (_prefetcher->need_prefetch(cast_set<uint32_t>(ord), &ranges)) {
         for (const auto& range : ranges) {

@@ -61,6 +61,8 @@
 #include "io/cache/block_file_cache_downloader.h"
 #include "io/cache/block_file_cache_factory.h"
 #include "io/cache/fs_file_cache_storage.h"
+#include "io/scheduler/cache_sink.h"
+#include "io/scheduler/io_scheduler.h"
 #include "io/fs/file_meta_cache.h"
 #include "io/fs/local_file_reader.h"
 #include "load/channel/load_channel_mgr.h"
@@ -317,6 +319,13 @@ Status ExecEnv::_init(const std::vector<StorePath>& store_paths,
     init_file_cache_factory(cache_paths);
     doris::io::BeConfDataDirReader::init_be_conf_data_dir(store_paths, spill_store_paths,
                                                           cache_paths);
+
+    // Cold-read IO scheduler POC (L2 + L3). Created unconditionally (cheap thread pools);
+    // they only do work when config::enable_io_scheduler_poc is on and a session is set.
+    RETURN_IF_ERROR(io::IOScheduler::instance()->init());
+    RETURN_IF_ERROR(io::CacheSink::instance()->init());
+    io::IOScheduler::instance()->register_sink(io::CacheSink::instance());
+
     _init_runtime_filter_timer_queue();
 
     _workload_group_manager = new WorkloadGroupMgr();
@@ -844,6 +853,11 @@ void ExecEnv::destroy() {
     }
     // Memory barrier to prevent other threads from accessing destructed resources
     _s_ready = false;
+
+    // Cold-read IO scheduler POC: stop the IO/sink thread pools before tearing down the
+    // file cache they may write into.
+    io::IOScheduler::instance()->stop();
+    io::CacheSink::instance()->stop();
 
     SAFE_STOP(_wal_manager);
     _wal_manager.reset();

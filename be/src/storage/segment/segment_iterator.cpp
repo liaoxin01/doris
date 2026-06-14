@@ -69,6 +69,8 @@
 #include "io/cache/cached_remote_file_reader.h"
 #include "io/fs/file_reader.h"
 #include "io/io_common.h"
+#include "io/scheduler/io_scheduler.h"
+#include "io/scheduler/segment_read_session.h"
 #include "runtime/descriptors.h"
 #include "runtime/query_context.h"
 #include "runtime/runtime_predicate.h"
@@ -575,6 +577,11 @@ Status SegmentIterator::_init_impl(const StorageReadOptions& opts) {
         }
     }
 
+    // Cold-read IO scheduler POC (L1): must run before init_iterators() so the per-column
+    // IOContext copies capture the (stable) session pointer. Ranges are submitted later, in
+    // _init_segment_prefetchers(), once the block sequence is computed.
+    _maybe_init_read_session();
+
     RETURN_IF_ERROR(init_iterators());
 
     RETURN_IF_ERROR(_construct_compound_expr_context());
@@ -706,6 +713,28 @@ Status SegmentIterator::_lazy_init(Block* block) {
     return Status::OK();
 }
 
+void SegmentIterator::_maybe_init_read_session() {
+    if (!config::enable_io_scheduler_poc || !config::is_cloud_mode()) {
+        return;
+    }
+    // POC scope: only the normal query scan path over an S3-backed cached segment.
+    if (_opts.io_ctx.reader_type != ReaderType::READER_QUERY) {
+        return;
+    }
+    auto cached = std::dynamic_pointer_cast<io::CachedRemoteFileReader>(_file_reader);
+    if (cached == nullptr) {
+        return; // not an S3-cached reader -> keep the legacy path
+    }
+    io::FileReaderSPtr raw = cached->remote_file_reader_sptr();
+    if (raw == nullptr) {
+        return;
+    }
+    std::string file_key = cached->path().filename().native();
+    _read_session = std::make_shared<io::SegmentReadSession>(std::move(file_key), std::move(raw));
+    // Captured by value into every ColumnIteratorOptions / PageReadOptions copy below.
+    _opts.io_ctx.poc_session = _read_session.get();
+}
+
 void SegmentIterator::_init_segment_prefetchers() {
     SCOPED_RAW_TIMER(&_opts.stats->segment_iterator_init_segment_prefetchers_timer_ns);
     if (!config::is_cloud_mode()) {
@@ -722,6 +751,9 @@ void SegmentIterator::_init_segment_prefetchers() {
     bool is_query = (_opts.io_ctx.reader_type == ReaderType::READER_QUERY);
     bool enable_prefetch = is_query ? config::enable_query_segment_file_cache_prefetch
                                     : config::enable_compaction_segment_file_cache_prefetch;
+    // Cold-read IO scheduler POC: reuse the prefetcher's block-sequence computation even
+    // when the legacy prefetch switch is off, then submit all ranges to the session.
+    const bool poc_on = config::enable_io_scheduler_poc && _read_session != nullptr;
     LOG_IF(INFO, config::enable_segment_prefetch_verbose_log) << fmt::format(
             "[verbose] SegmentIterator _init_segment_prefetchers, is_query={}, enable_prefetch={}, "
             "_row_bitmap.isEmpty()={}, row_bitmap.cardinality()={}, tablet={}, rowset={}, "
@@ -729,7 +761,7 @@ void SegmentIterator::_init_segment_prefetchers() {
             is_query, enable_prefetch, _row_bitmap.isEmpty(), _row_bitmap.cardinality(),
             _opts.tablet_id, _opts.rowset_id.to_string(), segment_id(),
             fmt::join(_predicate_column_ids, ","), fmt::join(_common_expr_column_ids, ","));
-    if (enable_prefetch && !_row_bitmap.isEmpty()) {
+    if ((enable_prefetch || poc_on) && !_row_bitmap.isEmpty()) {
         int window_size =
                 1 + (is_query ? config::query_segment_file_cache_prefetch_block_size
                               : config::compaction_segment_file_cache_prefetch_block_size);
@@ -781,6 +813,26 @@ void SegmentIterator::_init_segment_prefetchers() {
                     }
                 } else if (method == PrefetcherInitMethod::FROM_ROWIDS && !prefetcher_vec.empty()) {
                     SegmentPrefetcher::build_blocks_by_rowids(_row_bitmap, prefetcher_vec);
+                }
+            }
+
+            // POC L1: aggregate every block range across all columns of this segment file
+            // and submit them to the session in one shot. The scheduler sorts + coalesces;
+            // duplicates across columns are harmless (distinct file regions in practice).
+            if (poc_on) {
+                std::vector<io::FetchRange> ranges;
+                for (auto& [method, prefetcher_vec] : prefetchers) {
+                    for (auto* prefetcher : prefetcher_vec) {
+                        for (const auto& br : prefetcher->take_all_ranges()) {
+                            ranges.push_back({br.offset, br.size});
+                        }
+                    }
+                }
+                if (!ranges.empty()) {
+                    io::FetchHints hints;
+                    hints.cache_policy = io::PocCachePolicy::DISPOSABLE;
+                    hints.allow_coalesce = true;
+                    _read_session->submit(std::move(ranges), hints);
                 }
             }
         }
