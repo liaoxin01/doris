@@ -47,6 +47,7 @@
 #include "exprs/vexpr_context.h"
 #include "io/cache/block_file_cache_profile.h"
 #include "io/io_common.h"
+#include "io/scheduler/segment_read_session.h"
 #include "runtime/descriptors.h"
 #include "runtime/exec_env.h"
 #include "runtime/runtime_profile.h"
@@ -109,6 +110,14 @@ OlapScanner::OlapScanner(ScanLocalStateBase* parent, OlapScanner::Params&& param
                                           _state->skip_delete_bitmap());
     _has_prepared = false;
     _vector_search_params = params.state->get_vector_search_params();
+    // IO-dependency gate: install a scanner-owned slot so SegmentIterators publish their read
+    // session and the scan scheduler can park this scanner on pending IO. Only when both the
+    // scheduler and the gate are enabled in cloud mode (the gate also requires the TaskExecutor
+    // scan path at runtime; otherwise it stays inert).
+    if (config::enable_io_scheduler && config::enable_io_dependency && config::is_cloud_mode()) {
+        _io_barrier_slot = std::make_shared<io::IOBarrierSlot>();
+        _tablet_reader_params.io_barrier_slot = _io_barrier_slot;
+    }
 }
 
 static std::string read_columns_to_string(TabletSchemaSPtr tablet_schema,

@@ -38,6 +38,7 @@
 #include "core/block/block.h"
 #include "exec/common/memory.h"
 #include "exec/scan/scanner.h"
+#include "exec/scan/task_executor/listenable_future.h"
 #include "exec/scan/task_executor/split_runner.h"
 #include "runtime/runtime_profile.h"
 
@@ -158,6 +159,28 @@ public:
 
         _state = state;
     }
+
+    // --- IO dependency (scheduling-boundary gate) ---
+    // When the IO gate parks this task, _scanner_scan records the IO barrier future here and
+    // returns without producing a block; ScannerSplitRunner::process_for then returns this
+    // future so the executor reschedules the split once the IO completes (releasing the
+    // worker meanwhile). Only used on the TaskExecutor scan path.
+    void set_io_blocked(SharedListenableFuture<Void> f) {
+        _io_blocked_future = std::move(f);
+        _io_blocked.store(true, std::memory_order_release);
+    }
+    bool take_io_blocked(SharedListenableFuture<Void>* f) {
+        if (!_io_blocked.load(std::memory_order_acquire)) {
+            return false;
+        }
+        *f = _io_blocked_future;
+        _io_blocked.store(false, std::memory_order_release);
+        return true;
+    }
+
+private:
+    std::atomic<bool> _io_blocked {false};
+    SharedListenableFuture<Void> _io_blocked_future;
 };
 
 // ScannerContext is responsible for recording the execution status
@@ -219,6 +242,11 @@ public:
 
     // Return true if this ScannerContext need no more process
     bool done() const { return _is_finished || _should_stop; }
+
+    // True if scanners run on the TaskExecutor scan scheduler (which reschedules a split via
+    // the future returned from process_for). The IO-dependency gate only engages here; on the
+    // plain ThreadPool path a no-block early-return would lose the scanner, so it must not gate.
+    bool is_task_executor_scheduler() const;
 
     std::string debug_string();
 

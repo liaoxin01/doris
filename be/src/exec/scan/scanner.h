@@ -37,6 +37,10 @@ class TupleDescriptor;
 class VExprContext;
 
 class ScanLocalStateBase;
+
+namespace io {
+struct IOBarrierSlot;
+} // namespace io
 } // namespace doris
 
 namespace doris {
@@ -90,6 +94,10 @@ public:
 
     // Try to stop scanner, and all running readers.
     virtual void try_stop() { _should_stop = true; };
+
+    // IO-dependency gate: the scanner-owned slot tracking the current segment's read session
+    // (null unless the scanner opted in). Lets the scan scheduler park on pending IO.
+    virtual io::IOBarrierSlot* io_barrier_slot() { return nullptr; }
 
     virtual std::string get_name() { return ""; }
 

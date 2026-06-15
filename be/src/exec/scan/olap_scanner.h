@@ -89,6 +89,10 @@ public:
 
     void update_realtime_counters() override;
 
+    // IO-dependency gate: the scanner-owned slot the SegmentIterators publish their read
+    // session into (null unless the scanner opted in -- see ctor). Read by the scan scheduler.
+    io::IOBarrierSlot* io_barrier_slot() override { return _io_barrier_slot.get(); }
+
 protected:
     Status _get_block_impl(RuntimeState* state, Block* block, bool* eos) override;
     void _collect_profile_before_close() override;
@@ -113,6 +117,8 @@ private:
 
     TabletReader::ReaderParams _tablet_reader_params;
     std::unique_ptr<TabletReader> _tablet_reader;
+    // IO-dependency gate slot (see io_barrier_slot()); null unless the scanner opted in.
+    std::shared_ptr<io::IOBarrierSlot> _io_barrier_slot;
     std::optional<int64_t> _start_tso;
     std::optional<int64_t> _end_tso;
 

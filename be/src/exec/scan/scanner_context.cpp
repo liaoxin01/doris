@@ -324,6 +324,10 @@ void ScannerContext::clear_free_blocks() {
     clear_blocks(_free_blocks);
 }
 
+bool ScannerContext::is_task_executor_scheduler() const {
+    return dynamic_cast<TaskExecutorSimplifiedScanScheduler*>(_scanner_scheduler) != nullptr;
+}
+
 void ScannerContext::push_back_scan_task(std::shared_ptr<ScanTask> scan_task) {
     if (scan_task->status_ok()) {
         if (scan_task->cached_block && scan_task->cached_block->rows() > 0) {

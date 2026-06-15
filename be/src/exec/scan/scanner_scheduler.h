@@ -61,8 +61,12 @@ struct SimplifiedScanTask {
 
 class ScannerSplitRunner : public SplitRunner {
 public:
-    ScannerSplitRunner(std::string name, std::function<bool()> scan_func)
-            : _name(std::move(name)), _scan_func(std::move(scan_func)), _started(false) {}
+    ScannerSplitRunner(std::string name, std::function<bool()> scan_func,
+                       std::shared_ptr<ScanTask> scan_task = nullptr)
+            : _name(std::move(name)),
+              _scan_func(std::move(scan_func)),
+              _scan_task(std::move(scan_task)),
+              _started(false) {}
 
     Status init() override { return Status::OK(); }
 
@@ -83,6 +87,15 @@ public:
 private:
     std::string _name;
     std::function<bool()> _scan_func;
+    // When set, process_for() checks it for an IO-blocked barrier after each slice and returns
+    // that future so the executor parks/reschedules the split (IO-dependency gate). Null for
+    // paths that do not gate (e.g. multiget).
+    std::shared_ptr<ScanTask> _scan_task;
+    // True iff the most recent process_for() parked on pending IO (returned a not-done future).
+    // is_auto_reschedule() returns this so the executor reschedules the split via the blocked
+    // future's callback. For a normal run it stays false: rescheduling is operator-driven
+    // (the operator re-submits after collecting the produced block).
+    std::atomic<bool> _io_blocked_run {false};
 
     std::atomic<bool> _started;
     SharedListenableFuture<Void> _completion_future;
@@ -294,8 +307,8 @@ public:
         if (!_is_stop) {
             std::shared_ptr<SplitRunner> split_runner;
             if (scan_task.scan_task->is_first_schedule) {
-                split_runner = std::make_shared<ScannerSplitRunner>("scanner_split_runner",
-                                                                    scan_task.scan_func);
+                split_runner = std::make_shared<ScannerSplitRunner>(
+                        "scanner_split_runner", scan_task.scan_func, scan_task.scan_task);
                 RETURN_IF_ERROR(split_runner->init());
                 auto result = _task_executor->enqueue_splits(
                         scan_task.scanner_context->task_handle(), false, {split_runner});

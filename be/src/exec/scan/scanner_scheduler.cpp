@@ -38,6 +38,7 @@
 #include "exec/scan/scan_node.h"
 #include "exec/scan/scanner.h"
 #include "exec/scan/scanner_context.h"
+#include "io/scheduler/segment_read_session.h"
 #include "runtime/exec_env.h"
 #include "runtime/runtime_state.h"
 #include "runtime/thread_context.h"
@@ -164,6 +165,22 @@ void ScannerScheduler::_scanner_scan(std::shared_ptr<ScannerContext> ctx,
     // 2. start_scan_cpu_timer to make sure the cpu timer include the time of open and get_block, which is the real cpu time of scanner
     // 3. update_scan_cpu_timer when defer, to make sure the cpu timer include the time of open and get_block, which is the real cpu time of scanner
     // 4. start_wait_worker_timer when defer, to make sure the time of waiting for worker thread is recorded in the timer
+
+    // IO-dependency gate: if the active segment's read session still has pending remote IO at
+    // the read frontier, park this scanner on that IO instead of blocking a worker thread inside
+    // try_read. Only on the TaskExecutor scan path (which reschedules via the future returned
+    // from process_for); the ThreadPool path is driven by the operator re-submitting after it
+    // receives a block, so a no-block early-return there would lose the scanner. No block is
+    // produced and the task is not pushed, so this is idempotent: process_for returns the
+    // barrier, the executor reschedules when IO completes, and _scanner_scan re-runs.
+    if (config::enable_io_dependency && ctx->is_task_executor_scheduler()) {
+        if (io::IOBarrierSlot* slot = scanner->io_barrier_slot()) {
+            if (io::SegmentReadSessionSPtr s = slot->current(); s != nullptr && s->has_pending_io()) {
+                scan_task->set_io_blocked(s->io_barrier());
+                return;
+            }
+        }
+    }
 
     MonotonicStopWatch max_run_time_watch;
     max_run_time_watch.start();
@@ -382,6 +399,18 @@ void ScannerScheduler::_make_sure_virtual_col_is_materialized(
 Result<SharedListenableFuture<Void>> ScannerSplitRunner::process_for(std::chrono::nanoseconds) {
     _started = true;
     bool is_completed = _scan_func();
+    // IO-dependency gate: if this slice parked on pending IO, return that (not-done) barrier so
+    // the executor reschedules the split when the IO completes, releasing the worker meanwhile.
+    if (_scan_task != nullptr) {
+        SharedListenableFuture<Void> io_future;
+        if (_scan_task->take_io_blocked(&io_future)) {
+            // is_auto_reschedule() returns true for this run so the executor parks on this
+            // future and reschedules when the IO completes (releasing the worker meanwhile).
+            _io_blocked_run.store(true, std::memory_order_release);
+            return io_future;
+        }
+    }
+    _io_blocked_run.store(false, std::memory_order_release);
     if (is_completed) {
         _completion_future.set_value(Void {});
     }
@@ -401,7 +430,9 @@ bool ScannerSplitRunner::is_started() const {
 }
 
 bool ScannerSplitRunner::is_auto_reschedule() const {
-    return false;
+    // Only an IO-blocked run opts into executor-driven rescheduling (via the blocked future's
+    // callback). Normal runs return false: the operator re-submits after collecting the block.
+    return _io_blocked_run.load(std::memory_order_acquire);
 }
 
 } // namespace doris

@@ -39,6 +39,9 @@ class TabletSchema;
 
 struct RowsetReaderContext {
     ReaderType reader_type = ReaderType::READER_QUERY;
+    // IO-dependency gate: scanner-owned slot tracking the current segment's read session.
+    // Flows down into StorageReadOptions.io_ctx so the SegmentIterator can publish its session.
+    std::shared_ptr<io::IOBarrierSlot> io_barrier_slot = nullptr;
     Version version {-1, -1};
     TabletSchemaSPtr tablet_schema = nullptr;
     std::vector<int> topn_filter_source_node_ids;

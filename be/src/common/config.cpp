@@ -1610,6 +1610,7 @@ DEFINE_mInt64(io_scheduler_coalesce_gap, "524288");              // 512KB
 DEFINE_mInt64(io_scheduler_coalesce_quantum, "8388608");         // 8MB
 DEFINE_mInt64(io_scheduler_cache_fill_rate_mbps, "500");
 DEFINE_mBool(io_scheduler_submit_only_cold_blocks, "true");
+DEFINE_mBool(enable_io_dependency, "false");
 // The min thread num for S3FileUploadThreadPool
 DEFINE_Int64(num_s3_file_upload_thread_pool_min_thread, "16");
 // The max thread num for S3FileUploadThreadPool

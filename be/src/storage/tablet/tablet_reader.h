@@ -129,6 +129,9 @@ public:
         BaseTabletSPtr tablet;
         TabletSchemaSPtr tablet_schema;
         ReaderType reader_type = ReaderType::READER_QUERY;
+        // IO-dependency gate: scanner-owned slot, copied into RowsetReaderContext then into
+        // StorageReadOptions.io_ctx so the SegmentIterator publishes its session for the gate.
+        std::shared_ptr<io::IOBarrierSlot> io_barrier_slot = nullptr;
         bool direct_mode = false;
         bool aggregation = false;
         // for compaction, schema_change, check_sum: we don't use page cache

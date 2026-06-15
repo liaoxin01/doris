@@ -118,7 +118,7 @@ struct IOContext {
     // Scanner-owned (lives across segments); the SegmentIterator registers its read_session
     // here so the scan scheduler can park the scanner on pending IO instead of blocking a
     // worker thread. Null unless the scanner opted into the IO gate. Copied by value (shared).
-    std::shared_ptr<IOBarrierSlot> io_barrier_slot;
+    std::shared_ptr<IOBarrierSlot> io_barrier_slot = nullptr;
 };
 
 } // namespace io

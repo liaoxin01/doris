@@ -149,6 +149,7 @@ Status TabletReader::_capture_rs_readers(const ReaderParams& read_params) {
     }
 
     _reader_context.reader_type = read_params.reader_type;
+    _reader_context.io_barrier_slot = read_params.io_barrier_slot;
     _reader_context.version = read_params.version;
     _reader_context.tablet_schema = _tablet_schema;
     _reader_context.need_ordered_result = need_ordered_result;

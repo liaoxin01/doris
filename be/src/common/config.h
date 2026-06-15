@@ -1684,6 +1684,10 @@ DECLARE_mInt64(io_scheduler_cache_fill_rate_mbps);
 // the scheduler (cold blocks). Already-cached blocks fall through to the fast local read
 // path, so warm/partially-cached scans are not penalized by re-fetching from remote.
 DECLARE_mBool(io_scheduler_submit_only_cold_blocks);
+// IO dependency: park a scanner on pending IO at the scheduling boundary (instead of blocking
+// a worker thread inside try_read) and reschedule it when the IO completes. Only takes effect
+// on the TaskExecutor scan path; everything else keeps the synchronous blocking read.
+DECLARE_mBool(enable_io_dependency);
 
 // The min thread num for S3FileUploadThreadPool
 DECLARE_Int64(num_s3_file_upload_thread_pool_min_thread);
