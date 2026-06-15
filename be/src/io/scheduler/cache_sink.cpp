@@ -42,12 +42,12 @@ Status CacheSink::init() {
     if (!_inited.compare_exchange_strong(expected, true)) {
         return Status::OK();
     }
-    RETURN_IF_ERROR(ThreadPoolBuilder("PocCacheSink")
+    RETURN_IF_ERROR(ThreadPoolBuilder("CacheSink")
                             .set_min_threads(2)
                             .set_max_threads(2)
                             .build(&_pool));
     _last_refill = std::chrono::steady_clock::now();
-    LOG(INFO) << "CacheSink POC initialized";
+    LOG(INFO) << "CacheSink initialized";
     return Status::OK();
 }
 
@@ -62,7 +62,7 @@ void CacheSink::on_fetched(const std::string& file_key, const ExtentSPtr& e, con
     if (_stopped.load() || _pool == nullptr) {
         return;
     }
-    if (h.cache_policy == PocCachePolicy::BYPASS) {
+    if (h.cache_policy == CachePolicy::BYPASS) {
         return; // TopN / point lookup: never pollute the cache
     }
     if (e == nullptr || !e->status.ok() || e->data == nullptr) {
@@ -70,7 +70,7 @@ void CacheSink::on_fetched(const std::string& file_key, const ExtentSPtr& e, con
     }
     int64_t len = static_cast<int64_t>(e->len);
     if (_queued_bytes.load() + len > kQueueCapBytes) {
-        poc_add_sink_dropped_bytes(len);
+        io_scheduler_add_sink_dropped_bytes(len);
         return; // queue full: drop, do not block the IO thread
     }
     _queued_bytes.fetch_add(len);
@@ -80,12 +80,12 @@ void CacheSink::on_fetched(const std::string& file_key, const ExtentSPtr& e, con
     });
     if (!st.ok()) {
         _queued_bytes.fetch_sub(len);
-        poc_add_sink_dropped_bytes(len);
+        io_scheduler_add_sink_dropped_bytes(len);
     }
 }
 
 void CacheSink::_rate_limit(size_t bytes) {
-    double rate = static_cast<double>(config::poc_cache_fill_rate_mbps) * 1024.0 * 1024.0;
+    double rate = static_cast<double>(config::io_scheduler_cache_fill_rate_mbps) * 1024.0 * 1024.0;
     if (rate <= 0) {
         return; // unlimited
     }
@@ -152,7 +152,7 @@ void CacheSink::_write_back(std::string file_key, ExtentSPtr e) {
             size_t left = block->range().left;
             size_t sz = block->range().size();
             if (left < ext_begin || left + sz > ext_end) {
-                continue; // partial coverage at the edge -> POC does not patch holes
+                continue; // partial coverage at the edge -> the sink does not patch holes
             }
             const char* src = e->data.get() + (left - ext_begin);
             Status st = block->append(Slice(src, sz));

@@ -22,7 +22,7 @@
 namespace doris {
 
 namespace io {
-// Cold-read IO scheduler POC (forward decl): see io/scheduler/segment_read_session.h.
+// Cold-read IO scheduler (forward decl): see io/scheduler/segment_read_session.h.
 class SegmentReadSession;
 } // namespace io
 
@@ -102,14 +102,14 @@ struct IOContext {
     // if `is_warmup` == true, this I/O request is from a warm up task
     bool is_warmup {false};
     int64_t condition_cache_filtered_rows = 0;
-    // Cold-read IO scheduler POC: when non-null (and config::enable_io_scheduler_poc),
+    // Cold-read IO scheduler: when non-null (and config::enable_io_scheduler),
     // reads first try this session for a buffer-direct hit before the legacy cache path.
     // Lifetime is owned by the SegmentIterator that set it; copied by value with IOContext.
-    SegmentReadSession* poc_session = nullptr;
-    // Cold-read IO scheduler POC BYPASS (TopN / point lookup): when true (and the POC
+    SegmentReadSession* read_session = nullptr;
+    // Cold-read IO scheduler BYPASS (TopN / point lookup): when true (and the scheduler
     // switch is on), reads go straight to the raw remote reader for exactly the requested
     // bytes -- skipping get_or_set, so no 1MB block amplification and no cache write-back.
-    bool poc_bypass_cache = false;
+    bool bypass_cache = false;
 };
 
 } // namespace io

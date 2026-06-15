@@ -60,7 +60,7 @@
 namespace doris {
 
 namespace io {
-// Cold-read IO scheduler POC (forward decl): full type in io/scheduler/segment_read_session.h.
+// Cold-read IO scheduler (forward decl): full type in io/scheduler/segment_read_session.h.
 class SegmentReadSession;
 using SegmentReadSessionSPtr = std::shared_ptr<SegmentReadSession>;
 } // namespace io
@@ -347,7 +347,7 @@ private:
     void _init_row_bitmap_by_condition_cache();
 
     void _init_segment_prefetchers();
-    // Cold-read IO scheduler POC: create the read session (if eligible) before the column
+    // Cold-read IO scheduler: create the read session (if eligible) before the column
     // iterators copy the IOContext, so they capture the session pointer.
     void _maybe_init_read_session();
 
@@ -359,9 +359,9 @@ private:
     SchemaSPtr _schema;
     // storage type schema related to _schema, since column in segment may be different with type in _schema
     std::vector<IndexFieldNameAndTypePair> _storage_name_and_type;
-    // Cold-read IO scheduler POC: declared before _column_iterators so it is destroyed
-    // after them (the column iterators hold IOContext copies whose poc_session points at
-    // it). Null unless the POC switch is on for an eligible cloud query over S3 cache.
+    // Cold-read IO scheduler: declared before _column_iterators so it is destroyed
+    // after them (the column iterators hold IOContext copies whose read_session points at
+    // it). Null unless the switch is on for an eligible cloud query over S3 cache.
     io::SegmentReadSessionSPtr _read_session;
     // vector idx -> column iterarator
     std::vector<std::unique_ptr<ColumnIterator>> _column_iterators;

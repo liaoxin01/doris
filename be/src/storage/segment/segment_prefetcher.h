@@ -100,7 +100,7 @@ public:
 
     void build_all_data_blocks();
 
-    // Cold-read IO scheduler POC: export every block in the computed sequence as a
+    // Cold-read IO scheduler: export every block in the computed sequence as a
     // BlockRange (1MB-aligned), so the session can submit them all at once instead of
     // walking the sliding window. Must be called after the block sequence is built.
     std::vector<BlockRange> take_all_ranges() const {

@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// Cold-read IO subsystem POC -- L2 IOScheduler.
-// See cold-read-poc-implementation.md (section 5.1) for the design rationale.
+// Cold-read IO subsystem -- L2 IOScheduler.
+// See cold-read-io-redesign-v2.md (section 3.2) for the design rationale.
 //
 // The scheduler takes a batch of byte ranges that belong to one file, sorts and
 // coalesces them (512KB gap / 8MB quantum by default), then drives the merged
@@ -63,15 +63,15 @@ struct Extent {
 };
 using ExtentSPtr = std::shared_ptr<Extent>;
 
-// POC cache policy carried alongside a submit. Only DISPOSABLE / BYPASS are used.
-enum class PocCachePolicy : int8_t {
+// Cache policy carried alongside a submit. Only DISPOSABLE / BYPASS are used.
+enum class CachePolicy : int8_t {
     KEEP = 0,
     DISPOSABLE = 1,
     BYPASS = 2,
 };
 
 struct FetchHints {
-    PocCachePolicy cache_policy = PocCachePolicy::DISPOSABLE;
+    CachePolicy cache_policy = CachePolicy::DISPOSABLE;
     bool allow_coalesce = true;
 };
 
@@ -85,19 +85,19 @@ struct MergedFetch {
 };
 
 // Process-wide bvar counters (defined in io_scheduler.cpp).
-void poc_add_submitted_bytes(int64_t n);
-void poc_add_fetched_bytes(int64_t n);
-void poc_add_coalesced_requests(int64_t n);
-void poc_add_session_miss_bytes(int64_t n);
-void poc_add_sink_dropped_bytes(int64_t n);
+void io_scheduler_add_submitted_bytes(int64_t n);
+void io_scheduler_add_fetched_bytes(int64_t n);
+void io_scheduler_add_coalesced_requests(int64_t n);
+void io_scheduler_add_session_miss_bytes(int64_t n);
+void io_scheduler_add_sink_dropped_bytes(int64_t n);
 // Bytes of ranges skipped at submit because they were already in the local file cache (P1-5).
-void poc_add_cached_skipped_bytes(int64_t n);
+void io_scheduler_add_cached_skipped_bytes(int64_t n);
 
 class IOScheduler {
 public:
     static IOScheduler* instance();
 
-    // Creates the IO thread pool (config::poc_io_thread_num). Idempotent.
+    // Creates the IO thread pool (config::io_scheduler_thread_num). Idempotent.
     Status init();
     void stop();
 
@@ -114,8 +114,8 @@ public:
 
     void register_sink(CacheSink* sink) { _sink = sink; }
 
-    // Coalesce ranges: sort, dedup-overlap, merge while gap <= poc_coalesce_gap and the
-    // merged length stays <= poc_coalesce_quantum. Exposed for unit testing.
+    // Coalesce ranges: sort, dedup-overlap, merge while gap <= io_scheduler_coalesce_gap and the
+    // merged length stays <= io_scheduler_coalesce_quantum. Exposed for unit testing.
     static std::vector<FetchRange> coalesce(std::vector<FetchRange> ranges, size_t gap,
                                             size_t quantum, bool allow_coalesce);
 
@@ -139,7 +139,12 @@ private:
     // Runs one merged request: budget acquire -> raw read -> fulfil future -> sink -> release.
     void _run_task(IOTask task);
 
-    // Byte budget shared across all in-flight extents -- the memory bound of the POC.
+    // Target routing: drop ranges already DOWNLOADED in the local file cache (they fall
+    // through to the fast local read path), returning only the cold ranges to schedule.
+    std::vector<FetchRange> _filter_cold_ranges(const std::string& file_key,
+                                                std::vector<FetchRange> ranges);
+
+    // Byte budget shared across all in-flight extents -- the memory bound of the scheduler.
     // Acquire is done inside the IO thread (after dequeue), so submit() never blocks.
     void _budget_acquire(size_t n);
     void _budget_release(size_t n);

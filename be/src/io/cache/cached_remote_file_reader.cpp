@@ -283,18 +283,18 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
     }
     DCHECK(io_ctx);
     const bool is_dryrun = io_ctx->is_dryrun;
-    // Cold-read IO scheduler POC BYPASS (L3): TopN / point lookup reads go straight to the
+    // Cold-read IO scheduler BYPASS (L3): TopN / point lookup reads go straight to the
     // raw remote reader for exactly the requested bytes -- no get_or_set (no 1MB block
     // amplification), no cache write-back. This is what keeps BytesWriteIntoCache ~= 0.
-    if (config::enable_io_scheduler_poc && io_ctx->poc_bypass_cache && !is_dryrun) {
+    if (config::enable_io_scheduler && io_ctx->bypass_cache && !is_dryrun) {
         return _remote_file_reader->read_at(offset, result, bytes_read, io_ctx);
     }
-    // Cold-read IO scheduler POC (L1/L2): try the session first. On a hit the buffer is
+    // Cold-read IO scheduler (L1/L2): try the session first. On a hit the buffer is
     // delivered straight from the IO scheduler, bypassing the cache entirely (this is what
     // zeroes out LocalIOUseTimer). A miss falls through to the legacy path below, so any
-    // POC issue only costs performance, never correctness.
-    if (config::enable_io_scheduler_poc && !is_dryrun && io_ctx->poc_session != nullptr) {
-        if (Status st = io_ctx->poc_session->try_read(offset, result, bytes_read); st.ok()) {
+    // a session miss only costs performance, never correctness.
+    if (config::enable_io_scheduler && !is_dryrun && io_ctx->read_session != nullptr) {
+        if (Status st = io_ctx->read_session->try_read(offset, result, bytes_read); st.ok()) {
             return st;
         }
     }

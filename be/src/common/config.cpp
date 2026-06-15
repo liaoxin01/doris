@@ -1602,14 +1602,14 @@ DEFINE_mBool(enable_compaction_segment_file_cache_prefetch, "false");
 // Number of blocks to prefetch ahead in segment iterator for compaction
 DEFINE_mInt32(compaction_segment_file_cache_prefetch_block_size, "2");
 
-// ============================ Cold-read IO scheduler POC ============================
-DEFINE_mBool(enable_io_scheduler_poc, "false");
-DEFINE_Int64(poc_io_thread_num, "128");
-DEFINE_mInt64(poc_inflight_bytes_budget, "1073741824"); // 1GB
-DEFINE_mInt64(poc_coalesce_gap, "524288");              // 512KB
-DEFINE_mInt64(poc_coalesce_quantum, "8388608");         // 8MB
-DEFINE_mInt64(poc_cache_fill_rate_mbps, "500");
-DEFINE_mBool(poc_submit_only_cold_blocks, "true");
+// ============================ Cold-read IO scheduler ============================
+DEFINE_mBool(enable_io_scheduler, "false");
+DEFINE_Int64(io_scheduler_thread_num, "128");
+DEFINE_mInt64(io_scheduler_inflight_bytes_budget, "1073741824"); // 1GB
+DEFINE_mInt64(io_scheduler_coalesce_gap, "524288");              // 512KB
+DEFINE_mInt64(io_scheduler_coalesce_quantum, "8388608");         // 8MB
+DEFINE_mInt64(io_scheduler_cache_fill_rate_mbps, "500");
+DEFINE_mBool(io_scheduler_submit_only_cold_blocks, "true");
 // The min thread num for S3FileUploadThreadPool
 DEFINE_Int64(num_s3_file_upload_thread_pool_min_thread, "16");
 // The max thread num for S3FileUploadThreadPool

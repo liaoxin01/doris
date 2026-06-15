@@ -54,7 +54,7 @@ public:
 
     FileReader* get_remote_reader() { return _remote_file_reader.get(); }
 
-    // The raw, cache-bypassing remote reader. The IO scheduler POC (L2) reads large
+    // The raw, cache-bypassing remote reader. The IO scheduler (L2) reads large
     // coalesced extents through this so they do not go through get_or_set.
     FileReaderSPtr remote_file_reader_sptr() const { return _remote_file_reader; }
 

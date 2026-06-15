@@ -472,11 +472,11 @@ Status RowIdStorageReader::read_by_rowids(const PMultiGetRequest& request,
                 iterator_map[iterator_key].segment = segment;
                 iterator_item.storage_read_options.stats = &stats;
                 iterator_item.storage_read_options.io_ctx.reader_type = ReaderType::READER_QUERY;
-                // Cold-read IO scheduler POC (C point): point lookups read only a few KB per
+                // Cold-read IO scheduler (point lookup): point lookups read only a few KB per
                 // row, so bypass the cache to avoid ~50x read/write amplification (1MB block
                 // per tiny request). Validates metric 4 (BytesWriteIntoCache ~= 0).
-                if (config::enable_io_scheduler_poc) {
-                    iterator_item.storage_read_options.io_ctx.poc_bypass_cache = true;
+                if (config::enable_io_scheduler) {
+                    iterator_item.storage_read_options.io_ctx.bypass_cache = true;
                 }
             }
             segment = iterator_item.segment;
@@ -1116,11 +1116,11 @@ Status RowIdStorageReader::read_doris_format_row(
                 iterator_map[iterator_key].segment = segment;
                 iterator_item.storage_read_options.stats = &stats;
                 iterator_item.storage_read_options.io_ctx.reader_type = ReaderType::READER_QUERY;
-                // Cold-read IO scheduler POC (C point): point lookups read only a few KB per
+                // Cold-read IO scheduler (point lookup): point lookups read only a few KB per
                 // row, so bypass the cache to avoid ~50x read/write amplification (1MB block
                 // per tiny request). Validates metric 4 (BytesWriteIntoCache ~= 0).
-                if (config::enable_io_scheduler_poc) {
-                    iterator_item.storage_read_options.io_ctx.poc_bypass_cache = true;
+                if (config::enable_io_scheduler) {
+                    iterator_item.storage_read_options.io_ctx.bypass_cache = true;
                 }
             }
             RETURN_IF_ERROR(segment->seek_and_read_by_rowid(

@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// Cold-read IO subsystem POC -- L3 CacheSink.
-// See cold-read-poc-implementation.md (section 5.4).
+// Cold-read IO subsystem -- L3 CacheSink.
+// See cold-read-io-redesign-v2.md (section 3.3).
 //
 // In the new architecture the file cache leaves the read path and becomes a bypass
 // subscriber: the IO scheduler offers each fetched extent to the sink, which writes it
@@ -49,7 +49,7 @@ public:
 
     // IO-thread callback (non-blocking). BYPASS returns immediately; otherwise the extent
     // is enqueued (its shared_ptr keeps the buffer alive). If the queue is over its cap the
-    // extent is dropped and PocSinkDroppedBytes is bumped.
+    // extent is dropped and SinkDroppedBytes is bumped.
     void on_fetched(const std::string& file_key, const ExtentSPtr& e, const FetchHints& h);
 
 private:
@@ -57,7 +57,7 @@ private:
 
     void _write_back(std::string file_key, ExtentSPtr e);
 
-    // Token bucket: blocks until `bytes` tokens are available (rate = poc_cache_fill_rate_mbps).
+    // Token bucket: blocks until `bytes` tokens are available (rate = io_scheduler_cache_fill_rate_mbps).
     void _rate_limit(size_t bytes);
 
     std::unique_ptr<doris::ThreadPool> _pool;

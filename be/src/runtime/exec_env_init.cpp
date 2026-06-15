@@ -320,8 +320,8 @@ Status ExecEnv::_init(const std::vector<StorePath>& store_paths,
     doris::io::BeConfDataDirReader::init_be_conf_data_dir(store_paths, spill_store_paths,
                                                           cache_paths);
 
-    // Cold-read IO scheduler POC (L2 + L3). Created unconditionally (cheap thread pools);
-    // they only do work when config::enable_io_scheduler_poc is on and a session is set.
+    // Cold-read IO scheduler (L2 + L3). Created unconditionally (cheap thread pools);
+    // they only do work when config::enable_io_scheduler is on and a session is set.
     RETURN_IF_ERROR(io::IOScheduler::instance()->init());
     RETURN_IF_ERROR(io::CacheSink::instance()->init());
     io::IOScheduler::instance()->register_sink(io::CacheSink::instance());
@@ -854,7 +854,7 @@ void ExecEnv::destroy() {
     // Memory barrier to prevent other threads from accessing destructed resources
     _s_ready = false;
 
-    // Cold-read IO scheduler POC: stop the IO/sink thread pools before tearing down the
+    // Cold-read IO scheduler: stop the IO/sink thread pools before tearing down the
     // file cache they may write into.
     io::IOScheduler::instance()->stop();
     io::CacheSink::instance()->stop();

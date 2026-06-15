@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// Cold-read IO subsystem POC -- L1 SegmentReadSession.
-// See cold-read-poc-implementation.md (section 5.2).
+// Cold-read IO subsystem -- L1 SegmentReadSession.
+// See cold-read-io-redesign-v2.md (section 3.1).
 //
 // At segment-iterator init the query declares the exact byte ranges it will read for
 // the whole segment (1MB block granularity, inherited from SegmentPrefetcher). The
@@ -57,7 +57,7 @@ public:
 
     // The actual read entry point (called from the injection layer):
     //   1. interval map hit -> future.get() -> memcpy the requested slice -> OK
-    //   2. miss -> NotFound (caller falls back to legacy path), counts PocSessionMissBytes
+    //   2. miss -> NotFound (caller falls back to legacy path), counts SessionMissBytes
     Status try_read(size_t offset, Slice result, size_t* bytes_read);
 
     // Called on iterator destruction / query cancel: marks in-flight tasks abandoned so

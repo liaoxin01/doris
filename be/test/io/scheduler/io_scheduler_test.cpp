@@ -151,8 +151,8 @@ TEST_F(IOSchedulerTest, abandoned_tasks_are_skipped) {
 
 TEST_F(IOSchedulerTest, budget_backpressure_completes) {
     // Tiny budget forces serialization, but every future must still resolve.
-    auto old_budget = config::poc_inflight_bytes_budget;
-    config::poc_inflight_bytes_budget = 4096;
+    auto old_budget = config::io_scheduler_inflight_bytes_budget;
+    config::io_scheduler_inflight_bytes_budget = 4096;
     auto reader = std::make_shared<MockFileReader>(1 << 20, /*sleep_ms=*/5);
     auto abandoned = std::make_shared<std::atomic_bool>(false);
     std::vector<FetchRange> ranges;
@@ -178,7 +178,7 @@ TEST_F(IOSchedulerTest, budget_backpressure_completes) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     EXPECT_EQ(IOScheduler::instance()->inflight_bytes(), 0);
-    config::poc_inflight_bytes_budget = old_budget;
+    config::io_scheduler_inflight_bytes_budget = old_budget;
 }
 
 } // namespace doris::io
