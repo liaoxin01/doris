@@ -19,11 +19,16 @@
 
 #include <gen_cpp/Types_types.h>
 
+#include <memory>
+
 namespace doris {
 
 namespace io {
 // Cold-read IO scheduler (forward decl): see io/scheduler/segment_read_session.h.
 class SegmentReadSession;
+// Scanner-owned slot tracking the current segment's read session, so the scan scheduler
+// can park a scanner on pending IO. Defined in io/scheduler/segment_read_session.h.
+struct IOBarrierSlot;
 } // namespace io
 
 enum class ReaderType : uint8_t {
@@ -110,6 +115,10 @@ struct IOContext {
     // switch is on), reads go straight to the raw remote reader for exactly the requested
     // bytes -- skipping get_or_set, so no 1MB block amplification and no cache write-back.
     bool bypass_cache = false;
+    // Scanner-owned (lives across segments); the SegmentIterator registers its read_session
+    // here so the scan scheduler can park the scanner on pending IO instead of blocking a
+    // worker thread. Null unless the scanner opted into the IO gate. Copied by value (shared).
+    std::shared_ptr<IOBarrierSlot> io_barrier_slot;
 };
 
 } // namespace io

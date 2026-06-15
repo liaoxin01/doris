@@ -733,6 +733,11 @@ void SegmentIterator::_maybe_init_read_session() {
     _read_session = std::make_shared<io::SegmentReadSession>(std::move(file_key), std::move(raw));
     // Captured by value into every ColumnIteratorOptions / PageReadOptions copy below.
     _opts.io_ctx.read_session = _read_session.get();
+    // Publish to the scanner-owned slot (if the scanner opted into the IO gate) so the scan
+    // scheduler can park this scanner on pending IO instead of blocking a worker thread.
+    if (_opts.io_ctx.io_barrier_slot != nullptr) {
+        _opts.io_ctx.io_barrier_slot->publish(_read_session);
+    }
 }
 
 void SegmentIterator::_init_segment_prefetchers() {

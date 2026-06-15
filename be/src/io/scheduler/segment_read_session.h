@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <shared_mutex>
 #include <string>
 #include <utility>
@@ -65,6 +66,19 @@ public:
     // shared_ptr held inside the futures.
     void cancel();
 
+    // --- IO-readiness, for the scheduling-boundary IO gate (pipeline IODependency) ---
+    // The scanner reads roughly by increasing offset; `_consume_cursor` tracks how far it
+    // has read. These let the scan scheduler park a scanner on pending IO (and reschedule
+    // when it completes) instead of blocking a worker thread inside try_read.
+
+    // True if some submitted extent at/after the read frontier has not been fetched yet.
+    bool has_pending_io() const;
+
+    // A Void future that fires when the earliest still-pending extent at/after the read
+    // frontier completes; an already-ready future when nothing is pending. The caller may
+    // park on it (process_for) so the worker is released during the wait.
+    SharedListenableFuture<Void> io_barrier();
+
 private:
     std::string _file_key;
     FileReaderSPtr _inner;
@@ -72,8 +86,28 @@ private:
 
     // offset -> (end_exclusive, future). submit writes; try_read reads concurrently.
     std::map<size_t, std::pair<size_t, SharedListenableFuture<ExtentSPtr>>> _intervals;
-    std::shared_mutex _mu;
+    mutable std::shared_mutex _mu;
+    // Highest end-offset served by try_read so far; the read frontier (hint, relaxed).
+    std::atomic<size_t> _consume_cursor {0};
 };
 using SegmentReadSessionSPtr = std::shared_ptr<SegmentReadSession>;
+
+// Scanner-owned slot (referenced from IOContext) holding the current segment's read session.
+// The SegmentIterator publishes its session here at init; the scan scheduler reads it to
+// decide whether to park the scanner on pending IO. Weak so a finished segment's session is
+// naturally dropped. Thread-safe: written on segment open, read on the scanner thread.
+struct IOBarrierSlot {
+    void publish(const SegmentReadSessionSPtr& s) {
+        std::lock_guard<std::mutex> l(mu);
+        active = s;
+    }
+    SegmentReadSessionSPtr current() const {
+        std::lock_guard<std::mutex> l(mu);
+        return active.lock();
+    }
+
+    mutable std::mutex mu;
+    std::weak_ptr<SegmentReadSession> active;
+};
 
 } // namespace doris::io

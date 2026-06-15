@@ -108,7 +108,54 @@ Status SegmentReadSession::try_read(size_t offset, Slice result, size_t* bytes_r
     DCHECK(extent->offset <= offset && want_end <= extent->offset + extent->len);
     std::memcpy(result.data, extent->data.get() + (offset - extent->offset), want);
     *bytes_read = want;
+    // Advance the read frontier (monotonic hint for the IO gate).
+    size_t cur = _consume_cursor.load(std::memory_order_relaxed);
+    while (want_end > cur &&
+           !_consume_cursor.compare_exchange_weak(cur, want_end, std::memory_order_relaxed)) {
+    }
     return Status::OK();
+}
+
+bool SegmentReadSession::has_pending_io() const {
+    size_t frontier = _consume_cursor.load(std::memory_order_relaxed);
+    std::shared_lock<std::shared_mutex> l(_mu);
+    for (const auto& [start, end_and_future] : _intervals) {
+        if (end_and_future.first <= frontier) {
+            continue; // already consumed
+        }
+        if (!end_and_future.second.is_done()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+SharedListenableFuture<Void> SegmentReadSession::io_barrier() {
+    size_t frontier = _consume_cursor.load(std::memory_order_relaxed);
+    SharedListenableFuture<ExtentSPtr> pending;
+    bool found = false;
+    {
+        std::shared_lock<std::shared_mutex> l(_mu);
+        // The earliest still-pending extent at/after the read frontier.
+        for (const auto& [start, end_and_future] : _intervals) {
+            if (end_and_future.first <= frontier) {
+                continue;
+            }
+            if (!end_and_future.second.is_done()) {
+                pending = end_and_future.second;
+                found = true;
+                break;
+            }
+        }
+    }
+    if (!found) {
+        return SharedListenableFuture<Void>::create_ready(Void {});
+    }
+    // Bridge the extent future to a Void barrier (fires immediately if already done).
+    SharedListenableFuture<Void> barrier;
+    pending.add_callback(
+            [barrier](const ExtentSPtr&, const Status&) mutable { barrier.set_value(Void {}); });
+    return barrier;
 }
 
 void SegmentReadSession::cancel() {
